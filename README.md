@@ -55,7 +55,7 @@ SMID/
 
 │ ├── enums.py # Enumerações
 
-│ └── __init_.py
+│ └── ___init___.py
 
 ├── data/seed_usuarios.csv # Arquivo com utilizadores de teste
 
