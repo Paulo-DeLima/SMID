@@ -10,6 +10,7 @@ from database.db import (
     atualizar_agendamento_status,
     atualizar_encomenda_status,
     atualizar_status_doca,  # <-- Adicione este import
+    criar_alerta
 )
 from datetime import datetime
 
@@ -278,3 +279,52 @@ def render():
     if st.button("🔓 Sair"):
         st.session_state.logado = False
         st.rerun()
+
+def agendamento_atrasado(ag):
+    # Considera atraso se status for Confirmado ou Em Processamento e data/hora já passou
+    if ag["status"] not in ["Confirmado", "Em Processamento"]:
+        return False
+    try:
+        data_str = str(ag["data"])
+        hora_str = str(ag["hora"])
+        # Extrai apenas a data se vier com hora (ex: '2025-06-17 0:00:00')
+        if " " in data_str:
+            data_str = data_str.split(" ")[0]
+        # Suporta formatos dd/mm/yyyy ou yyyy-mm-dd
+        if "/" in data_str:
+            data_dt = datetime.strptime(data_str, "%d/%m/%Y")
+        else:
+            data_dt = datetime.strptime(data_str, "%Y-%m-%d")
+        # Se hora vier como '16:47:39', pega só HH:MM
+        if ":" in hora_str and len(hora_str.split(":")) > 2:
+            hora_str = ":".join(hora_str.split(":")[:2])
+        hora_dt = datetime.strptime(hora_str, "%H:%M").time()
+        agendamento_dt = datetime.combine(data_dt, hora_dt)
+        return agendamento_dt < datetime.now()
+    except Exception as e:
+        print(f"[DEBUG] Erro ao verificar atraso: {e} | data: {ag['data']} | hora: {ag['hora']}")
+        return False
+
+def gerar_alertas_atraso(ags_db, alertas):
+    for ag in ags_db:
+        if agendamento_atrasado(ag):
+            ja_existe = any(
+                alerta.get("tipo") == "Atraso"
+                and alerta.get("agendamento_id") == ag["id"]
+                and alerta.get("status", "Ativo") == "Ativo"
+                for alerta in alertas
+            )
+            if not ja_existe:
+                criar_alerta(
+                    mensagem=f"Agendamento {ag['id']} em atraso na doca {ag['doca_nome']} ({ag['data']} {ag['hora']})",
+                    doca_id=ag["doca_id"],
+                    tipo="Atraso",
+                    agendamento_id=ag["id"]
+                )
+
+# --- ALERTAS: busca do banco ---
+alertas = buscar_alertas()
+agendamentos_db = buscar_agendamentos()
+
+# Geração de alertas de atraso (robusta, sem duplicidade)
+gerar_alertas_atraso(agendamentos_db, alertas)

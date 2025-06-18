@@ -67,6 +67,61 @@ label, .stSelectbox > label {
 
     usuario = st.session_state.usuario
 
+    from database.db import criar_alerta
+    from datetime import datetime
+
+    def agendamento_atrasado(ag):
+        # Considera atraso se status for Confirmado ou Em Processamento e data/hora já passou
+        if ag["status"] not in ["Confirmado", "Em Processamento"]:
+            return False
+        try:
+            data_str = str(ag["data"])
+            hora_str = str(ag["hora"])
+            # Extrai apenas a data se vier com hora (ex: '2025-06-17 0:00:00')
+            if " " in data_str:
+                data_str = data_str.split(" ")[0]
+            # Suporta formatos dd/mm/yyyy ou yyyy-mm-dd
+            if "/" in data_str:
+                data_dt = datetime.strptime(data_str, "%d/%m/%Y")
+            else:
+                data_dt = datetime.strptime(data_str, "%Y-%m-%d")
+            # Se hora vier como '16:47:39', pega só HH:MM
+            if ":" in hora_str and len(hora_str.split(":")) > 2:
+                hora_str = ":".join(hora_str.split(":")[:2])
+            hora_dt = datetime.strptime(hora_str, "%H:%M").time()
+            agendamento_dt = datetime.combine(data_dt, hora_dt)
+            return agendamento_dt < datetime.now()
+        except Exception as e:
+            print(f"[DEBUG] Erro ao verificar atraso: {e} | data: {ag['data']} | hora: {ag['hora']}")
+            return False
+
+    def gerar_alertas_atraso(ags_db, alertas):
+        # Gera alerta de atraso para cada agendamento atrasado sem alerta ativo
+        for ag in ags_db:
+            if agendamento_atrasado(ag):
+                ja_existe = any(
+                    alerta.get("tipo") == "Atraso"
+                    and alerta.get("agendamento_id") == ag["id"]
+                    and alerta.get("status", "Ativo") == "Ativo"
+                    for alerta in alertas
+                )
+                if not ja_existe:
+                    criar_alerta(
+                        mensagem=f"Agendamento {ag['id']} em atraso na doca {ag['doca_nome']} ({ag['data']} {ag['hora']})",
+                        doca_id=ag["doca_id"],
+                        tipo="Atraso",
+                        agendamento_id=ag["id"]
+                    )
+
+    # --- ALERTAS: busca do banco ---
+    alertas = buscar_alertas()
+    ags_db = buscar_agendamentos()
+
+    # Geração de alertas de atraso (robusta, sem duplicidade)
+    gerar_alertas_atraso(ags_db, alertas)
+
+    usuario = st.session_state.usuario
+
     # --- ALERTAS: busca do banco ---
     alertas = buscar_alertas()
 
@@ -153,6 +208,7 @@ label, .stSelectbox > label {
         <span style="vertical-align: middle;">⏳ Agendamento Pendente</span>
     </div>
     <div style="color: #222; font-size: 1.05rem; margin-bottom: 2px;">
+        <b>ID:</b> {ag['id']} &nbsp; | &nbsp;
         <b>Cliente:</b> {ag['usuario_nome']} &nbsp; | &nbsp;
         <b>Doca:</b> {ag['doca_nome']}
     </div>
@@ -257,6 +313,7 @@ label, .stSelectbox > label {
         <span style="vertical-align: middle;">🔄 Em Processamento</span>
     </div>
     <div style="color: #222; font-size: 1.05rem; margin-bottom: 2px;">
+        <b>ID:</b> {ag['id']} &nbsp; | &nbsp;
         <b>Cliente:</b> {ag['usuario_nome']} &nbsp; | &nbsp;
         <b>Doca:</b> {ag['doca_nome']}
     </div>
@@ -350,6 +407,7 @@ label, .stSelectbox > label {
         <span style="vertical-align: middle;">📅 Agendamento Confirmado</span>
     </div>
     <div style="color: #222; font-size: 1.05rem; margin-bottom: 2px;">
+        <b>ID:</b> {ag['id']} &nbsp; | &nbsp;
         <b>Cliente:</b> {ag['usuario_nome']} &nbsp; | &nbsp;
         <b>Doca:</b> {ag['doca_nome']}
     </div>
@@ -398,6 +456,7 @@ label, .stSelectbox > label {
         <span style="vertical-align: middle;">✅ Agendamento Concluído</span>
     </div>
     <div style="color: #222; font-size: 1.05rem; margin-bottom: 2px;">
+        <b>ID:</b> {ag['id']} &nbsp; | &nbsp;
         <b>Cliente:</b> {ag['usuario_nome']} &nbsp; | &nbsp;
         <b>Doca:</b> {ag['doca_nome']}
     </div>
@@ -436,6 +495,7 @@ label, .stSelectbox > label {
         <span style="vertical-align: middle;">❌ Agendamento Cancelado</span>
     </div>
     <div style="color: #222; font-size: 1.05rem; margin-bottom: 2px;">
+        <b>ID:</b> {ag['id']} &nbsp; | &nbsp;
         <b>Cliente:</b> {ag['usuario_nome']} &nbsp; | &nbsp;
         <b>Doca:</b> {ag['doca_nome']}
     </div>
@@ -539,81 +599,88 @@ label, .stSelectbox > label {
         st.session_state.show_encomendas_gestor = not st.session_state.show_encomendas_gestor
 
     if st.session_state.show_encomendas_gestor:
-        st.markdown(
-        '<h3 style="color:#d0e4f7; font-weight:800; letter-spacing:0.5px; margin-bottom:12px;">Todas as Encomendas:</h3>',
-        unsafe_allow_html=True
-    )
-        status_options = ["Todas", "Pendente", "Em Processamento", "Processada", "Cancelada"]
-        st.session_state.filtro_encomenda_status = st.selectbox(
-            "Filtrar por status:",
-            status_options,
-            index=status_options.index(st.session_state.filtro_encomenda_status),
-            key="filtro_encomenda_status_select"
-        )
+       
         encomendas_db = buscar_encomendas()
-        # Buscar nomes dos clientes para cada encomenda
         usuarios = {u["id"]: u["nome"] for u in buscar_clientes()}
-        if st.session_state.filtro_encomenda_status == "Todas":
-            encomendas_filtradas = encomendas_db
-        else:
-            encomendas_filtradas = [e for e in encomendas_db if e["status"] == st.session_state.filtro_encomenda_status]
 
-        if not encomendas_filtradas:
-            st.info("Nenhuma encomenda encontrada para o filtro selecionado.")
-        else:
-            for encomenda in encomendas_filtradas:
-                cor_borda, cor_grad1, cor_grad2, cor_status, icone, status_legenda = {
-                    "Pendente":   ("#b28704", "#fff9e1", "#ffe082", "#b28704", "📦", "Pendente"),
-                    "Em Processamento": ("#1976d2", "#e3f2fd", "#90caf9", "#1976d2", "🔄", "Em Processamento"),
-                    "Processada": ("#388e3c", "#e8f5e9", "#a5d6a7", "#388e3c", "✅", "Processada"),
-                    "Cancelada":  ("#d32f2f", "#ffebee", "#ffcdd2", "#d32f2f", "❌", "Cancelada"),
-                }[encomenda["status"]]
+        # Inicializa toggles para cada status de encomenda
+        encomenda_statuses = ["Pendente", "Em Processamento", "Processada", "Cancelada"]
+        for status in encomenda_statuses:
+            key_toggle = f"show_encomenda_{status.lower().replace(' ', '_')}_gestor"
+            if key_toggle not in st.session_state:
+                st.session_state[key_toggle] = False
 
-                cancelar_key = f"cancelar_gestor_{encomenda['id']}"
+        status_labels = {
+            "Pendente": "Encomendas Pendentes",
+            "Em Processamento": "Encomendas em Processamento",
+            "Processada": "Encomendas Processadas",
+            "Cancelada": "Encomendas Canceladas"
+        }
 
-                cliente_nome = usuarios.get(encomenda["usuario_id"], "Desconhecido")
+        for status in encomenda_statuses:
+            if st.button(status_labels[status], key=f"btn_encomenda_{status.lower().replace(' ', '_')}_gestor"):
+                st.session_state[f"show_encomenda_{status.lower().replace(' ', '_')}_gestor"] = not st.session_state[f"show_encomenda_{status.lower().replace(' ', '_')}_gestor"]
+            if st.session_state[f"show_encomenda_{status.lower().replace(' ', '_')}_gestor"]:
+                encomendas_filtradas = [e for e in encomendas_db if e["status"] == status]
+                if not encomendas_filtradas:
+                    st.markdown(
+                        f'<h3 style="color:#d0e4f7; font-weight:200; letter-spacing:0.5px; margin-bottom:12px; font-size:1.02rem;">⚠️Nenhuma encomenda.⚠️</h3>',
+                        unsafe_allow_html=True
+                    )
+                else:
+                    for encomenda in encomendas_filtradas:
+                        cor_borda, cor_grad1, cor_grad2, cor_status, icone, status_legenda = {
+                            "Pendente":   ("#b28704", "#fff9e1", "#ffe082", "#b28704", "📦", "Pendente"),
+                            "Em Processamento": ("#1976d2", "#e3f2fd", "#90caf9", "#1976d2", "🔄", "Em Processamento"),
+                            "Processada": ("#388e3c", "#e8f5e9", "#a5d6a7", "#388e3c", "✅", "Processada"),
+                            "Cancelada":  ("#d32f2f", "#ffebee", "#ffcdd2", "#d32f2f", "❌", "Cancelada"),
+                        }[encomenda["status"]]
 
-                st.markdown(f"""
-                <div style="
-                    background: linear-gradient(90deg, {cor_grad1} 60%, {cor_grad2} 100%);
-                    padding: 18px 24px;
-                    border-radius: 12px;
-                    margin-bottom: 18px;
-                    box-shadow: 0 2px 12px #0002;
-                    border-left: 6px solid {cor_borda};
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                ">
-                  <div>
-                    <div style="font-size: 1.1rem; color: {cor_status}; font-weight: 700; letter-spacing: 1px; margin-bottom: 2px;">
-                        <span style="vertical-align: middle;">{icone} Encomenda {status_legenda}</span>
-                    </div>
-                    <div style="color: #222; font-size: 1.05rem; margin-bottom: 2px;">
-                        <b>ID:</b> {encomenda['id']} &nbsp; | &nbsp;
-                        <b>Cliente:</b> {cliente_nome}
-                    </div>
-                    <div style="color: #444; font-size: 0.98rem;">
-                        <b>Descrição:</b> {encomenda['descricao']}
-                    </div>
-                    <div style="color: #444; font-size: 0.98rem;">
-                        <b>Status:</b> <span style="color:{cor_status};">{encomenda['status']}</span>
-                    </div>
-                  </div>
-                  <div style="text-align: right;">
-                    <span style="background:{cor_status}22; color:{cor_status}; padding:6px 14px; border-radius:8px; font-weight:700; font-size:0.95rem;">
-                        ● {status_legenda}
-                    </span>
-                  </div>
-                </div>
-                """, unsafe_allow_html=True)
+                        cancelar_key = f"cancelar_gestor_{encomenda['id']}"
+                        cliente_nome = usuarios.get(encomenda["usuario_id"], "Desconhecido")
 
-                # Botão funcional de cancelar encomenda (apenas se Pendente ou Em Processamento)
-                if encomenda["status"] in ["Pendente", "Em Processamento"]:
-                    if st.button("Cancelar", key=cancelar_key):
-                        cancelar_encomenda(encomenda["id"])
-                        st.warning("Encomenda cancelada!")
-                        st.rerun()
+                        st.markdown(f"""
+                        <div style="
+                            background: linear-gradient(90deg, {cor_grad1} 60%, {cor_grad2} 100%);
+                            padding: 18px 24px;
+                            border-radius: 12px;
+                            margin-bottom: 18px;
+                            box-shadow: 0 2px 12px #0002;
+                            border-left: 6px solid {cor_borda};
+                            display: flex;
+                            align-items: center;
+                            justify-content: space-between;
+                        ">
+                          <div>
+                            <div style="font-size: 1.1rem; color: {cor_status}; font-weight: 700; letter-spacing: 1px; margin-bottom: 2px;">
+                                <span style="vertical-align: middle;">{icone} Encomenda {status_legenda}</span>
+                            </div>
+                            <div style="color: #222; font-size: 1.05rem; margin-bottom: 2px;">
+                                <b>ID:</b> {encomenda['id']} &nbsp; | &nbsp;
+                                <b>Cliente:</b> {cliente_nome}
+                            </div>
+                            <div style="color: #444; font-size: 0.98rem;">
+                                <b>Descrição:</b> {encomenda['descricao']}
+                            </div>
+                            <div style="color: #444; font-size: 0.98rem;">
+                                <b>Status:</b> <span style="color:{cor_status};">{encomenda['status']}</span>
+                            </div>
+                          </div>
+                          <div style="text-align: right;">
+                            <span style="background:{cor_status}22; color:{cor_status}; padding:6px 14px; border-radius:8px; font-weight:700; font-size:0.95rem;">
+                                ● {status_legenda}
+                            </span>
+                          </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        # Botão funcional de cancelar encomenda (apenas se Pendente ou Em Processamento)
+                        if encomenda["status"] in ["Pendente", "Em Processamento"]:
+                            if st.button("Cancelar", key=cancelar_key):
+                                cancelar_encomenda(encomenda["id"])
+                                st.warning("Encomenda cancelada!")
+                                st.rerun()
+        st.divider()
 
     # Painel de alertas
     if st.button("⚠️ Ver Alertas", key="btn_alertas_gestor"):

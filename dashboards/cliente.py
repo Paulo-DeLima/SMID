@@ -78,6 +78,8 @@ def render():
         st.session_state.show_form_agendamento = False
     if "show_encomendas" not in st.session_state:
         st.session_state.show_encomendas = False
+    if "show_form_encomenda" not in st.session_state:
+        st.session_state.show_form_encomenda = False
 
     st.divider()
 
@@ -138,7 +140,7 @@ def render():
         <span style="vertical-align: middle;">{icone} Agendamento {status_legenda}</span>
     </div>
     <div style="color: #222; font-size: 1.05rem; margin-bottom: 2px;">
-        <b>Data:</b> {ag['data']} &nbsp; <b>Hora:</b> {ag['hora']} &nbsp; <b>Doca:</b> {ag['doca_nome']}
+        <b>ID:</b> {ag['id']} &nbsp; | &nbsp;<b>Data:</b> {ag['data']} &nbsp; <b>Hora:</b> {ag['hora']} &nbsp; <b>Doca:</b> {ag['doca_nome']}
     </div>
     <div style="color: #444; font-size: 0.98rem;">
         <b>Status:</b> <span style="color:{cor_status};">{ag['status']}</span>
@@ -302,6 +304,7 @@ def render():
         <span style="vertical-align: middle;">{icone} Encomenda {status_legenda}</span>
     </div>
     <div style="color: #222; font-size: 1.05rem; margin-bottom: 2px;">
+        <b>ID:</b> {encomenda['id']} &nbsp; | &nbsp;
         <b>Descrição:</b> {encomenda['descricao']}
     </div>
     <div style="color: #444; font-size: 0.98rem;">
@@ -343,6 +346,31 @@ def render():
                                         st.session_state[f"show_alocar_{encomenda['id']}"] = False
                                         st.rerun()
         st.divider()
+
+    # Botão toggle para criar encomenda
+    if st.button("➕ Criar Encomenda", key="btn_criar_encomenda"):
+        st.session_state.show_form_encomenda = not st.session_state.show_form_encomenda
+
+    if st.session_state.show_form_encomenda:
+        st.markdown(
+            '<h3 style="color:#d0e4f7; font-weight:800; letter-spacing:0.5px; margin-bottom:12px;">Criar Nova Encomenda</h3>',
+            unsafe_allow_html=True
+        )
+        with st.form("form_criar_encomenda"):
+            descricao = st.text_input("Descrição da encomenda")
+            enviar = st.form_submit_button("Criar Encomenda")
+            if enviar:
+                if not descricao.strip():
+                    st.warning("A descrição da encomenda é obrigatória.")
+                else:
+                    # Função para criar encomenda no banco
+                    from database.db import criar_encomenda
+                    criar_encomenda(usuario_id=usuario_id, descricao=descricao)
+                    st.success("Encomenda criada com sucesso!")
+                    st.session_state.show_form_encomenda = False
+                    st.session_state.show_encomendas = True
+                    st.rerun()
+
     st.markdown(
         f'<div style="color:#90caf9; font-size:0.98rem; margin-top:24px; text-align:right;">Utilizador: <b>ID:</b> {st.session_state.nome} &nbsp;|&nbsp; <b>Email:</b> {usuario}</div>',
         unsafe_allow_html=True
