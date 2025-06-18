@@ -221,3 +221,17 @@ def atualizar_status_doca(doca_id, novo_status):
     conn.commit()
     cursor.close()
     conn.close()
+
+def criar_encomenda(usuario_id, descricao, agendamento_id=None):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO encomendas (usuario_id, agendamento_id, descricao, status, criado_em)
+        VALUES (%s, %s, %s, 'Pendente', NOW())
+        """,
+        (usuario_id, agendamento_id, descricao)
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
