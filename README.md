@@ -106,7 +106,7 @@ ngrok http 8501
 
 Exemplo:
 
-Utilizador: operador012@smid.com
+Utilizadores: operador012@smid.com, gestor002@smid.com, cliente099@smid.com 
 Senha: 1234
 
 Use conforme os dados definidos no seu banco/CSV.
